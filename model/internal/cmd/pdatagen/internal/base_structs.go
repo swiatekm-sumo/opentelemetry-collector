@@ -78,6 +78,17 @@ const messageValueGenerateTestTemplate = `func generateTest${structName}() ${str
 const messageValueFillTestHeaderTemplate = `func fillTest${structName}(tv ${structName}) {`
 const messageValueFillTestFooterTemplate = `}`
 
+const messageValueAliasTemplate = `${description}
+// Must use New${structName} function to create new instances.
+// Important: zero-initialized instance is not valid for use.
+type ${structName} = pdata.${structName} 
+
+// New${structName} creates a new empty ${structName}.
+//
+// This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
+// OR directly access the member if this is embedded in another struct.
+var New${structName} = pdata.New${structName}`
+
 const newLine = "\n"
 
 type baseStruct interface {
@@ -88,6 +99,8 @@ type baseStruct interface {
 	generateTests(sb *strings.Builder)
 
 	generateTestValueHelpers(sb *strings.Builder)
+
+	generateAlias(sb *strings.Builder)
 }
 
 type messageValueStruct struct {
@@ -184,6 +197,20 @@ func (ms *messageValueStruct) generateTestValueHelpers(sb *strings.Builder) {
 	sb.WriteString(os.Expand(messageValueFillTestFooterTemplate, func(name string) string {
 		panic(name)
 	}))
+}
+
+func (ms *messageValueStruct) generateAlias(sb *strings.Builder) {
+	sb.WriteString(os.Expand(messageValueAliasTemplate, func(name string) string {
+		switch name {
+		case "structName":
+			return ms.structName
+		case "description":
+			return ms.description
+		default:
+			panic(name)
+		}
+	}))
+	sb.WriteString(newLine + newLine)
 }
 
 var _ baseStruct = (*messageValueStruct)(nil)

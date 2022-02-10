@@ -14,13 +14,36 @@
 
 package pdata // import "go.opentelemetry.io/collector/model/pdata"
 
-import "go.opentelemetry.io/collector/model/internal/pdata"
+import (
+	"go.opentelemetry.io/collector/model/internal/data"
+)
 
 // TraceID is an alias of OTLP TraceID data type.
-type TraceID = pdata.TraceID
+type TraceID struct {
+	orig data.TraceID
+}
 
 // InvalidTraceID returns an empty (all zero bytes) TraceID.
-var InvalidTraceID = pdata.InvalidTraceID
+func InvalidTraceID() TraceID {
+	return TraceID{orig: data.NewTraceID([16]byte{})}
+}
 
 // NewTraceID returns a new TraceID from the given byte array.
-var NewTraceID = pdata.NewTraceID
+func NewTraceID(bytes [16]byte) TraceID {
+	return TraceID{orig: data.NewTraceID(bytes)}
+}
+
+// Bytes returns the byte array representation of the TraceID.
+func (t TraceID) Bytes() [16]byte {
+	return t.orig.Bytes()
+}
+
+// HexString returns hex representation of the TraceID.
+func (t TraceID) HexString() string {
+	return t.orig.HexString()
+}
+
+// IsEmpty returns true if id doesn't contain at least one non-zero byte.
+func (t TraceID) IsEmpty() bool {
+	return t.orig.IsEmpty()
+}

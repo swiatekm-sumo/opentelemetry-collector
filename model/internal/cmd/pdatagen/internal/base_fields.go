@@ -186,6 +186,8 @@ func (sf *sliceField) generateCopyToValue(sb *strings.Builder) {
 	sb.WriteString("\tms." + sf.fieldName + "().CopyTo(dest." + sf.fieldName + "())")
 }
 
+func (sf *sliceField) generateAlias(_ *strings.Builder) {}
+
 var _ baseField = (*sliceField)(nil)
 
 type messageValueField struct {
@@ -235,6 +237,8 @@ func (mf *messageValueField) generateSetWithTestValue(sb *strings.Builder) {
 func (mf *messageValueField) generateCopyToValue(sb *strings.Builder) {
 	sb.WriteString("\tms." + mf.fieldName + "().CopyTo(dest." + mf.fieldName + "())")
 }
+
+func (mf *messageValueField) generateAlias(_ *strings.Builder) {}
 
 var _ baseField = (*messageValueField)(nil)
 
@@ -289,6 +293,8 @@ func (pf *primitiveField) generateSetWithTestValue(sb *strings.Builder) {
 func (pf *primitiveField) generateCopyToValue(sb *strings.Builder) {
 	sb.WriteString("\tdest.Set" + pf.fieldName + "(ms." + pf.fieldName + "())")
 }
+
+func (pf *primitiveField) generateAlias(_ *strings.Builder) {}
 
 var _ baseField = (*primitiveField)(nil)
 
@@ -350,6 +356,8 @@ func (ptf *primitiveTypedField) generateCopyToValue(sb *strings.Builder) {
 	sb.WriteString("\tdest.Set" + ptf.fieldName + "(ms." + ptf.fieldName + "())")
 }
 
+func (ptf *primitiveTypedField) generateAlias(_ *strings.Builder) {}
+
 var _ baseField = (*primitiveTypedField)(nil)
 
 // Types that has defined a custom type (e.g. "type TraceID struct {}")
@@ -405,6 +413,8 @@ func (ptf *primitiveStructField) generateSetWithTestValue(sb *strings.Builder) {
 func (ptf *primitiveStructField) generateCopyToValue(sb *strings.Builder) {
 	sb.WriteString("\tdest.Set" + ptf.fieldName + "(ms." + ptf.fieldName + "())")
 }
+
+func (ms *primitiveStructField) generateAlias(_ *strings.Builder) {}
 
 var _ baseField = (*primitiveStructField)(nil)
 

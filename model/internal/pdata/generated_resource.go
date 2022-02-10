@@ -17,15 +17,46 @@
 
 package pdata
 
-import "go.opentelemetry.io/collector/model/internal/pdata"
+import (
+	otlpresource "go.opentelemetry.io/collector/model/internal/data/protogen/resource/v1"
+)
 
 // Resource is a message representing the resource information.
+//
+// This is a reference type, if passed by value and callee modifies it the
+// caller will see the modification.
+//
 // Must use NewResource function to create new instances.
 // Important: zero-initialized instance is not valid for use.
-type Resource = pdata.Resource
+type Resource struct {
+	orig *otlpresource.Resource
+}
+
+func newResource(orig *otlpresource.Resource) Resource {
+	return Resource{orig: orig}
+}
 
 // NewResource creates a new empty Resource.
 //
 // This must be used only in testing code. Users should use "AppendEmpty" when part of a Slice,
 // OR directly access the member if this is embedded in another struct.
-var NewResource = pdata.NewResource
+func NewResource() Resource {
+	return newResource(&otlpresource.Resource{})
+}
+
+// MoveTo moves all properties from the current struct to dest
+// resetting the current instance to its zero value
+func (ms Resource) MoveTo(dest Resource) {
+	*dest.orig = *ms.orig
+	*ms.orig = otlpresource.Resource{}
+}
+
+// Attributes returns the Attributes associated with this Resource.
+func (ms Resource) Attributes() AttributeMap {
+	return newAttributeMap(&(*ms.orig).Attributes)
+}
+
+// CopyTo copies all properties from the current struct to the dest.
+func (ms Resource) CopyTo(dest Resource) {
+	ms.Attributes().CopyTo(dest.Attributes())
+}
