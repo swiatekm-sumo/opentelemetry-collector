@@ -23,11 +23,11 @@ import (
 )
 
 func TestNestedArraySerializesCorrectly(t *testing.T) {
-	ava := pdata.NewAttributeValueArray()
+	ava := pdata.NewAnyValueArray()
 	ava.SliceVal().AppendEmpty().SetStringVal("foo")
 	ava.SliceVal().AppendEmpty().SetIntVal(42)
 
-	ava2 := pdata.NewAttributeValueArray()
+	ava2 := pdata.NewAnyValueArray()
 	ava2.SliceVal().AppendEmpty().SetStringVal("bar")
 	ava2.CopyTo(ava.SliceVal().AppendEmpty())
 
@@ -39,11 +39,11 @@ func TestNestedArraySerializesCorrectly(t *testing.T) {
 }
 
 func TestNestedMapSerializesCorrectly(t *testing.T) {
-	ava := pdata.NewAttributeValueMap()
+	ava := pdata.NewAnyValueMap()
 	av := ava.MapVal()
-	av.Insert("foo", pdata.NewAttributeValueString("test"))
+	av.Insert("foo", pdata.NewAnyValueString("test"))
 
-	ava2 := pdata.NewAttributeValueMap()
+	ava2 := pdata.NewAnyValueMap()
 	av2 := ava2.MapVal()
 	av2.InsertInt("bar", 13)
 	av.Insert("zoo", ava2)

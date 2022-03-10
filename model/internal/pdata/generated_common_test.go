@@ -62,13 +62,13 @@ func TestAttributeValueSlice(t *testing.T) {
 	assert.EqualValues(t, 0, es.Len())
 
 	es.EnsureCapacity(7)
-	emptyVal := newAttributeValue(&otlpcommon.AnyValue{})
-	testVal := generateTestAttributeValue()
+	emptyVal := newAnyValue(&otlpcommon.AnyValue{})
+	testVal := generateTestAnyValue()
 	assert.EqualValues(t, 7, cap(*es.orig))
 	for i := 0; i < es.Len(); i++ {
 		el := es.AppendEmpty()
 		assert.EqualValues(t, emptyVal, el)
-		fillTestAttributeValue(el)
+		fillTestAnyValue(el)
 		assert.EqualValues(t, testVal, el)
 	}
 }
@@ -141,7 +141,7 @@ func TestAttributeValueSlice_MoveAndAppendTo(t *testing.T) {
 func TestAttributeValueSlice_RemoveIf(t *testing.T) {
 	// Test RemoveIf on empty slice
 	emptySlice := NewAttributeValueSlice()
-	emptySlice.RemoveIf(func(el AttributeValue) bool {
+	emptySlice.RemoveIf(func(el AnyValue) bool {
 		t.Fail()
 		return false
 	})
@@ -149,7 +149,7 @@ func TestAttributeValueSlice_RemoveIf(t *testing.T) {
 	// Test RemoveIf
 	filtered := generateTestAttributeValueSlice()
 	pos := 0
-	filtered.RemoveIf(func(el AttributeValue) bool {
+	filtered.RemoveIf(func(el AnyValue) bool {
 		pos++
 		return pos%3 == 0
 	})
@@ -177,6 +177,6 @@ func fillTestAttributeValueSlice(tv AttributeValueSlice) {
 	l := 7
 	tv.EnsureCapacity(l)
 	for i := 0; i < l; i++ {
-		fillTestAttributeValue(tv.AppendEmpty())
+		fillTestAnyValue(tv.AppendEmpty())
 	}
 }

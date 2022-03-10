@@ -8,6 +8,16 @@
 - Rename `pdata.AttributeMap.Delete` to `pdata.AttributeMap.Remove` (#4914)
 - pdata: deprecate funcs working with InternalRep (#4957)
 
+### 🚩 Deprecations 🚩
+
+- API related to `pdata.AttributeValue` is deprecated in favor of `pdata.AnyValue` (#4975)
+  - `pdata.AttributeValue` struct is deprecated in favor of `pdata.AnyValue`
+  - `pdata.AttributeValueType` type is deprecated in favor of `pdata.AnyValueType`
+  - `pdata.AttributeValueType...` constants are deprecated in favor of `pdata.AnyValueType...`
+  - `pdata.NewAttributeValue...` funcs are deprecated in favor of `pdata.NewAnyValue...`
+  - `pdata.AttributeValueSlice` struct is deprecated in favor of `pdata.AnyValueSlice`
+  - `pdata.NewAttributeValueSlice` func is deprecated in favor of `pdata.NewAnyValueSlice`
+
 ### 💡 Enhancements 💡
 
 - Add `pdata.AttributeMap.RemoveIf`, which is a more performant way to remove multiple keys (#4914)

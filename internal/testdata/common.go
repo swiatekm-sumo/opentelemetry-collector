@@ -19,12 +19,12 @@ import (
 )
 
 var (
-	resourceAttributes1 = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"resource-attr": pdata.NewAttributeValueString("resource-attr-val-1")})
-	resourceAttributes2 = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"resource-attr": pdata.NewAttributeValueString("resource-attr-val-2")})
-	spanEventAttributes = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"span-event-attr": pdata.NewAttributeValueString("span-event-attr-val")})
-	spanLinkAttributes  = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"span-link-attr": pdata.NewAttributeValueString("span-link-attr-val")})
-	spanAttributes      = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"span-attr": pdata.NewAttributeValueString("span-attr-val")})
-	metricAttachment    = pdata.NewAttributeMapFromMap(map[string]pdata.AttributeValue{"exemplar-attachment": pdata.NewAttributeValueString("exemplar-attachment-value")})
+	resourceAttributes1 = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"resource-attr": pdata.NewAnyValueString("resource-attr-val-1")})
+	resourceAttributes2 = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"resource-attr": pdata.NewAnyValueString("resource-attr-val-2")})
+	spanEventAttributes = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"span-event-attr": pdata.NewAnyValueString("span-event-attr-val")})
+	spanLinkAttributes  = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"span-link-attr": pdata.NewAnyValueString("span-link-attr-val")})
+	spanAttributes      = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"span-attr": pdata.NewAnyValueString("span-attr-val")})
+	metricAttachment    = pdata.NewAttributeMapFromMap(map[string]pdata.AnyValue{"exemplar-attachment": pdata.NewAnyValueString("exemplar-attachment-value")})
 )
 
 const (

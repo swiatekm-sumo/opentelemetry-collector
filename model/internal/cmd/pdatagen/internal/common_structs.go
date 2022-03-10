@@ -105,7 +105,7 @@ var nameField = &primitiveField{
 }
 
 var anyValue = &messageValueStruct{
-	structName:     "AttributeValue",
+	structName:     "AnyValue",
 	originFullName: "otlpcommon.AnyValue",
 }
 
