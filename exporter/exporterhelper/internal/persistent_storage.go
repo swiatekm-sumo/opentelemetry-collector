@@ -121,15 +121,15 @@ func newPersistentContiguousStorage(ctx context.Context, queueName string, capac
 	}
 
 	initPersistentContiguousStorage(ctx, pcs)
-	notDispatchedReqs := pcs.retrieveNotDispatchedReqs(context.Background())
+
+	// Make sure the leftover requests are handled
+	pcs.requeueNotDispatchedReqs(context.Background())
 
 	// We start the loop first so in case there are more elements in the persistent storage than the capacity,
 	// it does not get blocked on initialization
 
 	go pcs.loop()
 
-	// Make sure the leftover requests are handled
-	pcs.enqueueNotDispatchedReqs(notDispatchedReqs)
 	// Make sure the communication channel is loaded up
 	for i := uint64(0); i < pcs.size(); i++ {
 		pcs.putChan <- struct{}{}
@@ -141,7 +141,7 @@ func newPersistentContiguousStorage(ctx context.Context, queueName string, capac
 func initPersistentContiguousStorage(ctx context.Context, pcs *persistentContiguousStorage) {
 	var writeIndex itemIndex
 	var readIndex itemIndex
-	batch, err := newBatch(pcs).get(readIndexKey, writeIndexKey).execute(ctx)
+	batch, err := newBatch(pcs).get(readIndexKey, writeIndexKey, currentlyDispatchedItemsKey).execute(ctx)
 
 	if err == nil {
 		readIndex, err = batch.getItemIndexResult(readIndexKey)
@@ -154,41 +154,37 @@ func initPersistentContiguousStorage(ctx context.Context, pcs *persistentContigu
 	if err != nil {
 		if err == errValueNotSet {
 			pcs.logger.Info("Initializing new persistent queue", zap.String(zapQueueNameKey, pcs.queueName))
+			pcs.readIndex = 0
+			pcs.writeIndex = 0
 		} else {
 			pcs.logger.Error("Failed getting read/write index, starting with new ones",
 				zap.String(zapQueueNameKey, pcs.queueName),
 				zap.Error(err))
+			// if we have dispatched items, set the read and write indices to be greater than theirs
+			// to avoid overwriting them
+			var dispatchedItems []itemIndex
+			dispatchedItems, err = batch.getItemIndexArrayResult(currentlyDispatchedItemsKey)
+			if err != nil || len(dispatchedItems) == 0 {
+				pcs.readIndex = 0
+				pcs.writeIndex = 0
+			} else {
+				var maxItemIndex itemIndex = dispatchedItems[0]
+				for _, value := range dispatchedItems {
+					if maxItemIndex < value {
+						maxItemIndex = value
+					}
+				}
+				pcs.readIndex = maxItemIndex + 1
+				pcs.writeIndex = maxItemIndex + 1
+			}
 		}
-		pcs.readIndex = 0
-		pcs.writeIndex = 0
+
 	} else {
 		pcs.readIndex = readIndex
 		pcs.writeIndex = writeIndex
 	}
 
 	atomic.StoreUint64(&pcs.itemsCount, uint64(pcs.writeIndex-pcs.readIndex))
-}
-
-func (pcs *persistentContiguousStorage) enqueueNotDispatchedReqs(reqs []PersistentRequest) {
-	if len(reqs) > 0 {
-		errCount := 0
-		for _, req := range reqs {
-			if req == nil || pcs.put(req) != nil {
-				errCount++
-			}
-		}
-		if errCount > 0 {
-			pcs.logger.Error("Errors occurred while moving items for dispatching back to queue",
-				zap.String(zapQueueNameKey, pcs.queueName),
-				zap.Int(zapNumberOfItems, len(reqs)), zap.Int(zapErrorCount, errCount))
-
-		} else {
-			pcs.logger.Info("Moved items for dispatching back to queue",
-				zap.String(zapQueueNameKey, pcs.queueName),
-				zap.Int(zapNumberOfItems, len(reqs)))
-
-		}
-	}
 }
 
 // loop is the main loop that handles fetching items from the persistent buffer
@@ -290,11 +286,9 @@ func (pcs *persistentContiguousStorage) getNextItem(ctx context.Context) (Persis
 	return nil, false
 }
 
-// retrieveNotDispatchedReqs gets the items for which sending was not finished, cleans the storage
-// and moves the items back to the queue. The function returns an array which might contain nils
-// if unmarshalling of the value at a given index was not possible.
-func (pcs *persistentContiguousStorage) retrieveNotDispatchedReqs(ctx context.Context) []PersistentRequest {
-	var reqs []PersistentRequest
+// requeueNotDispatchedReqs gets the items for which sending was not finished, cleans the storage
+// and moves the items back to the queue. Items which cannot be read or unmarshalled are ignored.
+func (pcs *persistentContiguousStorage) requeueNotDispatchedReqs(ctx context.Context) {
 	var dispatchedItems []itemIndex
 
 	pcs.mu.Lock()
@@ -307,7 +301,7 @@ func (pcs *persistentContiguousStorage) retrieveNotDispatchedReqs(ctx context.Co
 	}
 	if err != nil {
 		pcs.logger.Error("Could not fetch items left for dispatch by consumers", zap.String(zapQueueNameKey, pcs.queueName), zap.Error(err))
-		return reqs
+		return
 	}
 
 	if len(dispatchedItems) > 0 {
@@ -317,48 +311,49 @@ func (pcs *persistentContiguousStorage) retrieveNotDispatchedReqs(ctx context.Co
 		pcs.logger.Debug("No items left for dispatch by consumers")
 	}
 
-	reqs = make([]PersistentRequest, len(dispatchedItems))
-	keys := make([]string, len(dispatchedItems))
-	retrieveBatch := newBatch(pcs)
-	cleanupBatch := newBatch(pcs)
-	for i, it := range dispatchedItems {
-		keys[i] = pcs.itemKey(it)
-		retrieveBatch.get(keys[i])
-		cleanupBatch.delete(keys[i])
-	}
-
-	_, retrieveErr := retrieveBatch.execute(ctx)
-	_, cleanupErr := cleanupBatch.execute(ctx)
-
-	if retrieveErr != nil {
-		pcs.logger.Warn("Failed retrieving items left by consumers", zap.String(zapQueueNameKey, pcs.queueName), zap.Error(retrieveErr))
-	}
-
-	if cleanupErr != nil {
-		pcs.logger.Debug("Failed cleaning items left by consumers", zap.String(zapQueueNameKey, pcs.queueName), zap.Error(cleanupErr))
-	}
-
-	if retrieveErr != nil {
-		return reqs
-	}
-
-	for i, key := range keys {
-		req, err := retrieveBatch.getRequestResult(key)
-		// If error happened or item is nil, it will be efficiently ignored
+	for index, item := range dispatchedItems {
+		itemKey := pcs.itemKey(item)
+		retrieveBatch := newBatch(pcs).get(itemKey)
+		_, retrieveErr := retrieveBatch.execute(ctx)
+		if retrieveErr != nil {
+			pcs.logger.Warn("Failed retrieving item left by consumers", zap.String(zapQueueNameKey, pcs.queueName), zap.Error(retrieveErr))
+			_, _ = newBatch(pcs).setItemIndexArray(currentlyDispatchedItemsKey, dispatchedItems).execute(ctx)
+			continue
+		}
+		req, err := retrieveBatch.getRequestResult(itemKey)
+		// If error happened or item is nil, ignore it
 		if err != nil {
 			pcs.logger.Warn("Failed unmarshalling item",
-				zap.String(zapQueueNameKey, pcs.queueName), zap.String(zapKey, key), zap.Error(err))
-		} else {
-			if req == nil {
-				pcs.logger.Debug("Item value could not be retrieved",
-					zap.String(zapQueueNameKey, pcs.queueName), zap.String(zapKey, key), zap.Error(err))
-			} else {
-				reqs[i] = req
-			}
+				zap.String(zapQueueNameKey, pcs.queueName), zap.String(zapKey, itemKey), zap.Error(err))
+			_, _ = newBatch(pcs).setItemIndexArray(currentlyDispatchedItemsKey, dispatchedItems).execute(ctx)
+			continue
+		} else if req == nil {
+			pcs.logger.Debug("Item value could not be retrieved",
+				zap.String(zapQueueNameKey, pcs.queueName), zap.String(zapKey, itemKey), zap.Error(err))
+			continue
 		}
-	}
 
-	return reqs
+		// this logic is similar to .put(), but different enough that it's difficult to make DRY
+		requeueKey := pcs.itemKey(pcs.writeIndex)
+		requeueBatch := newBatch(pcs)
+		remainingItems := dispatchedItems[(index + 1):]
+		requeueBatch.setItemIndexArray(currentlyDispatchedItemsKey, remainingItems).
+			setItemIndex(writeIndexKey, pcs.writeIndex+1).
+			setRequest(requeueKey, req).
+			delete(itemKey)
+
+		_, requeueErr := requeueBatch.execute(ctx)
+		if requeueErr != nil {
+			pcs.logger.Warn("Failed requeueing item",
+				zap.String(zapQueueNameKey, pcs.queueName), zap.String(zapKey, itemKey), zap.Error(requeueErr))
+			continue
+		}
+
+		// update local counters after successful requeue
+		pcs.writeIndex++
+		atomic.StoreUint64(&pcs.itemsCount, uint64(pcs.writeIndex-pcs.readIndex))
+		pcs.putChan <- struct{}{}
+	}
 }
 
 // itemDispatchingStart appends the item to the list of currently dispatched items
