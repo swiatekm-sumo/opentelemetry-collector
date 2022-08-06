@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fsnotify/fsnotify"
+
 	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/confmap/provider/internal"
 )
@@ -48,24 +50,100 @@ func New() confmap.Provider {
 	return &provider{}
 }
 
-func (fmp *provider) Retrieve(_ context.Context, uri string, _ confmap.WatcherFunc) (confmap.Retrieved, error) {
+func (fmp *provider) Retrieve(ctx context.Context, uri string, watcher confmap.WatcherFunc) (confmap.Retrieved, error) {
 	if !strings.HasPrefix(uri, schemeName+":") {
 		return confmap.Retrieved{}, fmt.Errorf("%q uri is not supported by %q provider", uri, schemeName)
 	}
 
 	// Clean the path before using it.
-	content, err := ioutil.ReadFile(filepath.Clean(uri[len(schemeName)+1:]))
+	cleanedPath := filepath.Clean(uri[len(schemeName)+1:])
+	content, err := ioutil.ReadFile(cleanedPath)
 	if err != nil {
 		return confmap.Retrieved{}, fmt.Errorf("unable to read the file %v: %w", uri, err)
 	}
 
-	return internal.NewRetrievedFromYAML(content)
+	opts := []confmap.RetrievedOption{}
+	if watcher != nil {
+		closeFunc, err := watchConfigFile(ctx, cleanedPath, watcher)
+		if err != nil {
+			return confmap.Retrieved{}, fmt.Errorf("unable to start file watcher %v: %w", uri, err)
+		}
+		opts = append(opts, confmap.WithRetrievedClose(closeFunc))
+	}
+
+	return internal.NewRetrievedFromYAML(content, opts...)
 }
 
 func (*provider) Scheme() string {
 	return schemeName
 }
 
-func (*provider) Shutdown(context.Context) error {
+func (fmp *provider) Shutdown(context.Context) error {
 	return nil
+}
+
+// watchConfigFile starts a file watcher for the provided path, which monitors it for changes and converts
+// them to change events for the provided config watcher
+// returns a function to close the watcher, or an error
+func watchConfigFile(ctx context.Context, path string, configWatcher confmap.WatcherFunc) (confmap.CloseFunc, error) {
+	fileWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("unable to create file watcher for %v: %w", path, err)
+	}
+
+	if err = fileWatcher.Add(path); err != nil {
+		return nil, fmt.Errorf("unable to watch the file %v: %w", path, err)
+	}
+
+	go startFileEventLoop(ctx, fileWatcher, configWatcher)
+
+	closeFunc := func(_ context.Context) error {
+		return fileWatcher.Close()
+	}
+
+	return closeFunc, nil
+}
+
+// startFileEventLoop starts a loop which processes filesystem events from the fileWatcher, converts them
+// into ChangeEvents, and calls the configWatcher function on them
+// returns when the fileWatcher is closed, or when the context is cancelled
+func startFileEventLoop(ctx context.Context, fileWatcher *fsnotify.Watcher, configWatcher confmap.WatcherFunc) {
+	for { // this loop will exit once the fileWatcher is closed or the context is cancelled
+		select {
+		case fsEvent, ok := <-fileWatcher.Events:
+			if !ok {
+				return
+			}
+			changeEvent := fsEventToChangeEvent(fsEvent)
+			if changeEvent != nil {
+				configWatcher(changeEvent)
+			}
+		case err, ok := <-fileWatcher.Errors:
+			if !ok {
+				return
+			}
+			changeEvent := confmap.ChangeEvent{Error: err}
+			configWatcher(&changeEvent)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// fsEventToChangeEvent converts file system events from fsnotify to ChangeEvents for the config provider
+// the logic is that we emit a normal change event for writes and creates, errors for renames and removes
+// and we ignore permission changes
+func fsEventToChangeEvent(fsEvent fsnotify.Event) *confmap.ChangeEvent {
+	var err error
+	switch fsEvent.Op {
+	case fsnotify.Write, fsnotify.Create:
+		err = nil
+	case fsnotify.Rename:
+		err = fmt.Errorf("config file moved: %v", fsEvent.Name)
+	case fsnotify.Remove:
+		err = fmt.Errorf("config file removed: %v", fsEvent.Name)
+	case fsnotify.Chmod: // no event, we don't really care
+		return nil
+	}
+	return &confmap.ChangeEvent{Error: err}
 }

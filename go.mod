@@ -5,6 +5,7 @@ go 1.18
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.1
 	github.com/cenkalti/backoff/v4 v4.1.3
+	github.com/fsnotify/fsnotify v1.5.4
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.3.0
@@ -82,7 +83,7 @@ replace go.opentelemetry.io/collector/semconv => ./semconv
 replace go.opentelemetry.io/collector/pdata => ./pdata
 
 retract (
-	v0.32.0 // Contains incomplete metrics transition to proto 0.9.0, random components are not working.
-	v0.57.0 // Release failed, use v0.57.2
 	v0.57.1 // Release failed, use v0.57.2
+	v0.57.0 // Release failed, use v0.57.2
+	v0.32.0 // Contains incomplete metrics transition to proto 0.9.0, random components are not working.
 )
