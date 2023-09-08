@@ -9,13 +9,15 @@ import (
 	"compress/zlib"
 	"errors"
 	"io"
-	"sync"
+	"runtime"
 
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 
 	"go.opentelemetry.io/collector/config/configcompression"
 )
+
+var encoderCount int
 
 type writeCloserReset interface {
 	io.WriteCloser
@@ -24,17 +26,26 @@ type writeCloserReset interface {
 
 var (
 	_          writeCloserReset = (*gzip.Writer)(nil)
-	gZipPool                    = &compressor{pool: sync.Pool{New: func() any { return gzip.NewWriter(nil) }}}
+	gZipPool   *compressor
 	_          writeCloserReset = (*snappy.Writer)(nil)
-	snappyPool                  = &compressor{pool: sync.Pool{New: func() any { return snappy.NewBufferedWriter(nil) }}}
+	snappyPool *compressor
 	_          writeCloserReset = (*zstd.Encoder)(nil)
-	zStdPool                    = &compressor{pool: sync.Pool{New: func() any { zw, _ := zstd.NewWriter(nil); return zw }}}
+	zStdPool   *compressor
 	_          writeCloserReset = (*zlib.Writer)(nil)
-	zLibPool                    = &compressor{pool: sync.Pool{New: func() any { return zlib.NewWriter(nil) }}}
+	zLibPool   *compressor
 )
 
+func init() {
+	maxPoolSize := runtime.NumCPU()
+	gZipPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return gzip.NewWriter(nil) })}
+	snappyPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return snappy.NewBufferedWriter(nil) })}
+	zStdPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { zw, _ := zstd.NewWriter(nil); return zw })}
+	zLibPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return zlib.NewWriter(nil) })}
+
+}
+
 type compressor struct {
-	pool sync.Pool
+	pool *encoderPool
 }
 
 // writerFactory defines writer field in CompressRoundTripper.
@@ -54,7 +65,7 @@ func newCompressor(compressionType configcompression.CompressionType) (*compress
 }
 
 func (p *compressor) compress(buf *bytes.Buffer, body io.ReadCloser) error {
-	writer := p.pool.Get().(writeCloserReset)
+	writer := p.pool.Get()
 	defer p.pool.Put(writer)
 	writer.Reset(buf)
 
@@ -72,4 +83,32 @@ func (p *compressor) compress(buf *bytes.Buffer, body io.ReadCloser) error {
 	}
 
 	return writer.Close()
+}
+
+type encoderPool struct {
+	New func() writeCloserReset
+	pool chan writeCloserReset
+}
+
+func newEncoderPool(maxSize int, new func() writeCloserReset) *encoderPool {
+	return &encoderPool{
+		New: new,
+		pool: make(chan writeCloserReset, maxSize),
+	}
+}
+
+func (p *encoderPool) Get() writeCloserReset {
+	select {
+	case encoder := <-p.pool:
+		return encoder
+	default:
+		return p.New()
+	}
+}
+
+func (p *encoderPool) Put(encoder writeCloserReset) {
+	select {
+	case p.pool <- encoder:
+	default:
+	}
 }
