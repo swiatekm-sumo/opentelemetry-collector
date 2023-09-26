@@ -17,8 +17,6 @@ import (
 	"go.opentelemetry.io/collector/config/configcompression"
 )
 
-var encoderCount int
-
 type writeCloserReset interface {
 	io.WriteCloser
 	Reset(w io.Writer)
@@ -39,7 +37,7 @@ func init() {
 	maxPoolSize := runtime.NumCPU()
 	gZipPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return gzip.NewWriter(nil) })}
 	snappyPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return snappy.NewBufferedWriter(nil) })}
-	zStdPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { zw, _ := zstd.NewWriter(nil); return zw })}
+	zStdPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { zw, _ := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1)); return zw })}
 	zLibPool = &compressor{newEncoderPool(maxPoolSize, func() writeCloserReset { return zlib.NewWriter(nil) })}
 
 }

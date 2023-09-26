@@ -26,6 +26,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/config/configcompression"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
 	"go.opentelemetry.io/collector/consumer"
@@ -235,6 +236,73 @@ func TestLogsRoundTrip(t *testing.T) {
 			require.Len(t, allLogs, 1)
 			assert.EqualValues(t, md, allLogs[0])
 		})
+	}
+}
+
+func BenchmarkLogsRoundTripCompression(b *testing.B) {
+	addr := testutil.GetAvailableLocalAddress(b)
+
+	sink := new(consumertest.LogsSink)
+	receiverFactory := otlpreceiver.NewFactory()
+	receiverCfg := createReceiverConfig(addr, receiverFactory.CreateDefaultConfig())
+	recv, err := receiverFactory.CreateLogsReceiver(context.Background(), receivertest.NewNopCreateSettings(), receiverCfg, sink)
+	require.NoError(b, err)
+	require.NoError(b, recv.Start(context.Background(), componenttest.NewNopHost()))
+	b.Cleanup(func() {
+		require.NoError(b, recv.Shutdown(context.Background()))
+	})
+
+	factory := NewFactory()
+	cfg := createExporterConfig(fmt.Sprintf("http://%s", addr), factory.CreateDefaultConfig())
+	cfg.Compression = configcompression.Zstd
+	exp, err := factory.CreateLogsExporter(context.Background(), exportertest.NewNopCreateSettings(), cfg)
+	require.NoError(b, err)
+	require.NoError(b, exp.Start(context.Background(), componenttest.NewNopHost()))
+	b.Cleanup(func() {
+		require.NoError(b, exp.Shutdown(context.Background()))
+	})
+
+	md := testdata.GenerateLogs(100)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sink.Reset()
+		assert.NoError(b, exp.ConsumeLogs(context.Background(), md))
+		require.Eventually(b, func() bool {
+			return sink.LogRecordCount() > 0
+		}, 1*time.Second, 1*time.Millisecond)
+	}
+}
+
+func TestLogsRoundTripCompression(t *testing.T) {
+	addr := testutil.GetAvailableLocalAddress(t)
+
+	sink := new(consumertest.LogsSink)
+	receiverFactory := otlpreceiver.NewFactory()
+	receiverCfg := createReceiverConfig(addr, receiverFactory.CreateDefaultConfig())
+	recv, err := receiverFactory.CreateLogsReceiver(context.Background(), receivertest.NewNopCreateSettings(), receiverCfg, sink)
+	require.NoError(t, err)
+	require.NoError(t, recv.Start(context.Background(), componenttest.NewNopHost()))
+	t.Cleanup(func() {
+		require.NoError(t, recv.Shutdown(context.Background()))
+	})
+
+	factory := NewFactory()
+	cfg := createExporterConfig(fmt.Sprintf("http://%s", addr), factory.CreateDefaultConfig())
+	cfg.Compression = configcompression.Zstd
+	exp, err := factory.CreateLogsExporter(context.Background(), exportertest.NewNopCreateSettings(), cfg)
+	require.NoError(t, err)
+	require.NoError(t, exp.Start(context.Background(), componenttest.NewNopHost()))
+	t.Cleanup(func() {
+		require.NoError(t, exp.Shutdown(context.Background()))
+	})
+
+	md := testdata.GenerateLogs(100)
+	for i := 0; i < 100; i++ {
+		sink.Reset()
+		assert.NoError(t, exp.ConsumeLogs(context.Background(), md))
+		require.Eventually(t, func() bool {
+			return sink.LogRecordCount() > 0
+		}, 1*time.Second, 1*time.Millisecond)
 	}
 }
 
